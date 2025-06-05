@@ -9,9 +9,9 @@ import { getGuildReports } from "@/lib/warcraftlogs"
 const DEFAULT_CONFIG = {
   clientId: "9f148174-057b-4479-98e3-77175a476032",
   clientSecret: "jWuhJFYpisGR3t4CGY4sbWERKtgRGgeTOhE4BHkE",
-  guildName: "Sweet Remustard",
+  guildName: "sweet remustard",
   serverName: "thunderstrike",
-  serverRegion: "EU"
+  serverRegion: "eu"
 }
 
 export function WarcraftLogsConfig() {
@@ -35,11 +35,22 @@ export function WarcraftLogsConfig() {
     setError(null)
 
     try {
-      // Test the configuration by fetching guild reports
+      // Keep exact values from URL structure
+      const formattedServerName = config.serverName.trim().toLowerCase()
+      const formattedRegion = config.serverRegion.toLowerCase()
+      const formattedGuildName = config.guildName.trim().toLowerCase()
+
+      console.log('Attempting to fetch reports for Classic Fresh guild:', {
+        guildName: formattedGuildName,
+        serverName: formattedServerName,
+        region: formattedRegion,
+        url: `https://fresh.warcraftlogs.com/guild/${formattedRegion}/${formattedServerName}/${encodeURIComponent(formattedGuildName)}`
+      })
+
       const reports = await getGuildReports(
-        config.guildName,
-        config.serverName.toLowerCase().replace(/[^a-z0-9]/g, ''),
-        config.serverRegion,
+        formattedGuildName,
+        formattedServerName,
+        formattedRegion,
         {
           clientId: config.clientId,
           clientSecret: config.clientSecret
@@ -47,16 +58,25 @@ export function WarcraftLogsConfig() {
       )
 
       if (reports && reports.length > 0) {
+        console.log('Found Classic Fresh reports:', reports)
         setReports(reports)
         setIsConfigured(true)
-        // Store the configuration in localStorage
-        localStorage.setItem("warcraftlogs_config", JSON.stringify(config))
+        localStorage.setItem("warcraftlogs_config", JSON.stringify({
+          ...config,
+          guildName: formattedGuildName,
+          serverName: formattedServerName,
+          serverRegion: formattedRegion
+        }))
       } else {
-        setError(`No logs found for ${config.guildName} on ${config.serverName}-${config.serverRegion}. Make sure your guild has logs uploaded to WarcraftLogs.`)
+        setError(`No logs found for guild "${formattedGuildName}" on ${formattedServerName}-${formattedRegion}. Please verify:
+        1. The guild name is exactly "sweet remustard" (lowercase with space)
+        2. The server name is "thunderstrike" (lowercase)
+        3. The guild has public logs uploaded to WarcraftLogs Classic Fresh
+        4. You're looking at https://fresh.warcraftlogs.com/guild/${formattedRegion}/${formattedServerName}/${encodeURIComponent(formattedGuildName)}`)
       }
     } catch (err: any) {
-      console.error(err)
-      setError(err.message || "Failed to connect to Warcraft Logs. Please verify your guild name and server information.")
+      console.error('WarcraftLogs API Error:', err)
+      setError(`Failed to connect to WarcraftLogs: ${err.message}. Please verify your guild information.`)
     } finally {
       setIsLoading(false)
     }
@@ -76,14 +96,43 @@ export function WarcraftLogsConfig() {
               <ul className="space-y-2">
                 {reports.slice(0, 5).map((report) => (
                   <li key={report.code} className="text-sm">
-                    {new Date(report.startTime).toLocaleDateString()}: {report.title}
+                    <a 
+                      href={`https://fresh.warcraftlogs.com/reports/${report.code}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:text-blue-700 hover:underline flex items-center gap-2"
+                    >
+                      <span>{new Date(report.startTime).toLocaleDateString()}: {report.title}</span>
+                      <svg 
+                        className="w-4 h-4" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path 
+                          strokeLinecap="round" 
+                          strokeLinejoin="round" 
+                          strokeWidth={2} 
+                          d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" 
+                        />
+                      </svg>
+                    </a>
                   </li>
                 ))}
               </ul>
+              <a
+                href={`https://fresh.warcraftlogs.com/guild/${config.serverRegion.toLowerCase()}/${config.serverName.toLowerCase()}/${encodeURIComponent(config.guildName.toLowerCase())}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-500 hover:text-blue-700 hover:underline mt-4 inline-block"
+              >
+                View all logs on WarcraftLogs →
+              </a>
             </div>
             <Button 
               variant="outline"
               onClick={() => setIsConfigured(false)}
+              className="mt-4"
             >
               Update Configuration
             </Button>

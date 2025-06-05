@@ -1,7 +1,7 @@
 "use client"
 
-const WARCRAFTLOGS_TOKEN_URL = 'https://www.warcraftlogs.com/oauth/token'
-const WARCRAFTLOGS_API_URL = 'https://www.warcraftlogs.com/api/v2/client'
+const WARCRAFTLOGS_TOKEN_URL = 'https://fresh.warcraftlogs.com/oauth/token'
+const WARCRAFTLOGS_API_URL = 'https://fresh.warcraftlogs.com/api/v2/client'
 
 type WarcraftLogsConfig = {
   clientId: string
@@ -36,6 +36,8 @@ async function getAccessToken(config: WarcraftLogsConfig) {
   })
 
   if (!response.ok) {
+    const error = await response.text()
+    console.error('Failed to get access token:', error)
     throw new Error('Failed to get access token')
   }
 
@@ -68,10 +70,14 @@ export async function getGuildReports(
   const token = await getAccessToken(config)
 
   // Format guild and server names according to WarcraftLogs requirements
-  const formattedGuildName = encodeURIComponent(guildName.trim())
-  const formattedServerName = encodeURIComponent(serverName.trim())
-  const formattedRegion = region.toUpperCase()
+  // Keep spaces in guild name, just trim and lowercase
+  const formattedGuildName = guildName.trim().toLowerCase()
+  // Server name should be lowercase and trimmed only
+  const formattedServerName = serverName.trim().toLowerCase()
+  // Region should be lowercase
+  const formattedRegion = region.toLowerCase()
 
+  // Query for reports using the Classic Fresh endpoint
   const query = `
     query {
       reportData {
@@ -82,7 +88,22 @@ export async function getGuildReports(
             startTime
             endTime
             zone {
+              id
               name
+            }
+            owner {
+              name
+            }
+            guild {
+              id
+              name
+              server {
+                name
+                region {
+                  name
+                  slug
+                }
+              }
             }
           }
         }
@@ -90,10 +111,12 @@ export async function getGuildReports(
     }
   `
 
-  console.log('Querying WarcraftLogs with:', {
+  console.log('WarcraftLogs Classic Fresh API Request:', {
     guildName: formattedGuildName,
     serverName: formattedServerName,
-    region: formattedRegion
+    region: formattedRegion,
+    query,
+    url: `https://fresh.warcraftlogs.com/guild/${formattedRegion}/${formattedServerName}/${encodeURIComponent(formattedGuildName)}`
   })
 
   const response = await fetch(WARCRAFTLOGS_API_URL, {
@@ -101,6 +124,7 @@ export async function getGuildReports(
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json',
     },
     body: JSON.stringify({ query }),
   })
@@ -108,13 +132,19 @@ export async function getGuildReports(
   if (!response.ok) {
     const error = await response.text()
     console.error('WarcraftLogs API Error Response:', error)
-    throw new Error(`Failed to fetch reports: ${error}`)
+    throw new Error(`API request failed: ${error}`)
   }
 
   const data = await response.json()
   
   if (data.errors) {
     console.error('WarcraftLogs GraphQL Errors:', data.errors)
+    console.error('Request details:', {
+      guildName: formattedGuildName,
+      serverName: formattedServerName,
+      region: formattedRegion,
+      url: `https://fresh.warcraftlogs.com/guild/${formattedRegion}/${formattedServerName}/${encodeURIComponent(formattedGuildName)}`
+    })
     const errorMessage = data.errors[0]?.message || 'Unknown GraphQL error'
     throw new Error(`WarcraftLogs API Error: ${errorMessage}`)
   }
@@ -124,7 +154,17 @@ export async function getGuildReports(
     throw new Error('Invalid API response format')
   }
 
-  return data.data.reportData.reports.data
+  // If we get here but have no reports, it means the guild exists but has no logs
+  const reports = data.data.reportData.reports.data
+  if (!reports || reports.length === 0) {
+    console.log('No reports found for guild:', {
+      guildName: formattedGuildName,
+      serverName: formattedServerName,
+      region: formattedRegion
+    })
+  }
+
+  return reports || []
 }
 
 export async function getReportDetails(reportId: string, config: WarcraftLogsConfig) {
